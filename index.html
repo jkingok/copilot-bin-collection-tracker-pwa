@@ -74,10 +74,21 @@ if ('serviceWorker' in navigator) {
   const showBtn = document.getElementById('debug-show');
   const hideBtn = document.getElementById('debug-hide');
   const output = document.getElementById('debug-log');
+  let debugToggled = false;
 
   function showPanel() {
     panel.style.display = '';
     showBtn.style.display = 'none';
+    if (!debugToggled) {
+      console.log = logToPanel;
+      console.error = logToPanel;
+      console.warn = logToPanel;
+
+      // Log uncaught errors
+      window.addEventListener('error', function(e) { logToPanel('[Uncaught]', e.message); });
+    
+      debugToggled = true;
+    }
   }
   function hidePanel() {
     panel.style.display = 'none';
@@ -91,12 +102,6 @@ if ('serviceWorker' in navigator) {
     output.textContent += args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') + '\n';
     output.scrollTop = output.scrollHeight;
   }
-  console.log = logToPanel;
-  console.error = logToPanel;
-  console.warn = logToPanel;
-
-  // Log uncaught errors
-  window.addEventListener('error', function(e) { logToPanel('[Uncaught]', e.message); });
 })();
 
 // ==================== APP LOGIC ====================
@@ -168,19 +173,6 @@ function nextCollectionDay(pattern, startDate) {
     }
   }
   return soonest;
-}
-
-// ===== Geocoding =====
-async function reverseGeocode(lat, lng) {
-  // API key placeholder in GEO_API
-  //const url = GEO_API.replace('{lat}',lat).replace('{lng}',lng);
-  //const res = await fetch(url);
-  //if (!res.ok) return '';
-  //const data = await res.json();
-  //return data.results[0]?.formatted || '';
-
-  const res = prompt("Enter a name for this location:");
-  return (res !== null) ? res : '';
 }
 
 // ===== Rendering =====
@@ -287,6 +279,7 @@ function editLocation(idx) {
     pattern:[],
     startDate:formatDate(new Date())
   };
+  console.log(`{idx} => {loc}`);
   // UI
   let html = `
   <form id="locEditForm">
@@ -381,14 +374,11 @@ function editLocation(idx) {
   // Geolocate for this location
   document.getElementById('geoBtn').onclick = ()=>{
     navigator.geolocation.getCurrentPosition(pos=>{
+      console.log(pos.coords);
       loc.lat = pos.coords.latitude;
       loc.lng = pos.coords.longitude;
-      //// Try geocode
-      //reverseGeocode(loc.lat,loc.lng).then(addr=>{
-      //  if (addr) loc.address = addr;
-        editLocation(idx??null);
-      //});
-    });//,err=>alert('Geolocation failed: '+err.message));
+      editLocation(idx??null);
+    },err=>alert('Geolocation failed: '+err.message));
   };
 
   // Cancel
