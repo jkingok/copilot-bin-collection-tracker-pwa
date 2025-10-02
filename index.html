@@ -124,7 +124,7 @@ function saveLocations(locations) {
   localStorage.setItem('bin-locations', JSON.stringify(locations));
 }
 function loadLocations() {
-  return JSON.parse(localStorage.getItem('bin-locations') || '[]');
+  return (typeof locations !== "undefined" && locations != null) ? locations : JSON.parse(localStorage.getItem('bin-locations') || '[]');
 }
 function saveState(state) {
   localStorage.setItem('bin-state', JSON.stringify(state));
