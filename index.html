@@ -270,14 +270,16 @@ function binDesc(b) {
 }
 
 // ----- Add/Edit location -----
-function editLocation(idx) {
+function editLocation(idx, loc) {
   const locations = loadLocations();
-  let loc = idx!=null ? Object.assign({},locations[idx]) : {
-    name:'',address:'',lat:null,lng:null,
-    bins:[{size:240,color:'Red'}],
-    pattern:[],
-    startDate:formatDate(new Date())
-  };
+  if (loc === undefined) {
+    loc = idx!=null ? Object.assign({},locations[idx]) : {
+      name:'',address:'',lat:null,lng:null,
+      bins:[{size:240,color:'Red'}],
+      pattern:[],
+      startDate:formatDate(new Date())
+    };
+  }
   console.log(`edit ${idx} => `, loc);
   // UI
   let html = `
@@ -338,13 +340,13 @@ function editLocation(idx) {
   // Bin events
   document.getElementById('addBinBtn').onclick = ()=>{
     loc.bins.push({size:120,color:'Blue'});
-    editLocation(idx??null);
+    editLocation(idx??null, loc);
   };
 
   // Pattern events
   document.getElementById('addPatternBtn').onclick = ()=>{
     loc.pattern.push({binIndex:0,dayOfWeek:1,weekOfFortnight:1});
-    editLocation(idx??null);
+    editLocation(idx??null, loc);
   };
 
   // Bin row events
@@ -356,7 +358,7 @@ function editLocation(idx) {
         // Also remove any pattern referencing this bin
         loc.pattern = loc.pattern.filter(p=>p.binIndex!==i);
         loc.pattern.forEach(p=>{ if (p.binIndex>i) p.binIndex--; });
-        editLocation(idx??null);
+        editLocation(idx??null, loc);
       }
     };
   });
@@ -366,7 +368,7 @@ function editLocation(idx) {
     const delBtn = document.getElementById('patDelBtn'+i);
     if (delBtn) delBtn.onclick = ()=>{
       loc.pattern.splice(i,1);
-      editLocation(idx??null);
+      editLocation(idx??null, loc);
     };
   });
 
@@ -376,8 +378,7 @@ function editLocation(idx) {
       console.log(pos.coords);
       loc.lat = pos.coords.latitude;
       loc.lng = pos.coords.longitude;
-      document.getElementById('latNum').value = loc.lat;
-      document.getElementById('lngNum').value = loc.lng;
+      editLocation(idx??null, loc);
     },err=>alert('Geolocation failed: '+err.message));
   };
 
