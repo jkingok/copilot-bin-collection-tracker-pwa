@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Geolocation Debug</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; padding: 2em; background: #f8f9fa; }
+    #output { font-size: 1.2em; margin-top: 2em; }
+    button { font-size: 1em; padding: 0.5em 1em; }
+  </style>
+</head>
+<body>
+  <h1>Geolocation Debug</h1>
+  <button onclick="getLocation()">Show My Latitude & Longitude</button>
+  <div id="output"></div>
+  <script>
+    function getLocation() {
+      const out = document.getElementById('output');
+      if (!navigator.geolocation) {
+        out.textContent = "Geolocation is not supported by your browser.";
+        return;
+      }
+      out.textContent = "Locating…";
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          out.innerHTML = `
+            <b>Latitude:</b> ${pos.coords.latitude}<br>
+            <b>Longitude:</b> ${pos.coords.longitude}
+          `;
+        },
+        err => {
+          out.textContent = "Error: " + err.message;
+        }
+      );
+    }
+  </script>
+</body>
+</html>
