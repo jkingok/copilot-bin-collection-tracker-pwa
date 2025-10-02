@@ -29,7 +29,19 @@
 <section class="section">
   <div class="container" id="app"></div>
 </section>
-
+<!-- Collapsible Debug Panel -->
+<div id="debug-panel" class="box" style="position:fixed;bottom:1em;right:1em;max-width:95vw;z-index:9999;width:350px;display:none;">
+  <div class="level is-mobile mb-2">
+    <div class="level-left">
+      <strong>Debug Log</strong>
+    </div>
+    <div class="level-right">
+      <button id="debug-hide" class="delete is-small"></button>
+    </div>
+  </div>
+  <pre id="debug-log" style="background:#222;color:#fff;padding:8px;border-radius:4px;max-height:180px;overflow:auto;margin-bottom:0;font-size:0.92em;"></pre>
+</div>
+<button id="debug-show" class="button is-small is-link" style="position:fixed;bottom:1em;right:1em;z-index:9999;">Show Debug Log</button>
 <script>
 // ==== PWA: Inline service worker registration + code (caches self, and offline content) ====
 if ('serviceWorker' in navigator) {
@@ -54,6 +66,38 @@ if ('serviceWorker' in navigator) {
     }
   });
 }
+
+// ================ DEBUGGING HELPERS ================
+
+(function() {
+  const panel = document.getElementById('debug-panel');
+  const showBtn = document.getElementById('debug-show');
+  const hideBtn = document.getElementById('debug-hide');
+  const output = document.getElementById('debug-log');
+
+  function showPanel() {
+    panel.style.display = '';
+    showBtn.style.display = 'none';
+  }
+  function hidePanel() {
+    panel.style.display = 'none';
+    showBtn.style.display = '';
+  }
+
+  showBtn.onclick = showPanel;
+  hideBtn.onclick = hidePanel;
+
+  function logToPanel(...args) {
+    output.textContent += args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ') + '\n';
+    output.scrollTop = output.scrollHeight;
+  }
+  console.log = logToPanel;
+  console.error = logToPanel;
+  console.warn = logToPanel;
+
+  // Log uncaught errors
+  window.addEventListener('error', function(e) { logToPanel('[Uncaught]', e.message); });
+})();
 
 // ==================== APP LOGIC ====================
 
