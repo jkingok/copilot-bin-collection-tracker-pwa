@@ -1,8 +1,454 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <title>Bin Collection Tracker</title>
+  <meta charset="UTF-8"/>
+  <title>Bin Collection Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- PWA Manifest & iOS meta -->
+  <link rel="manifest" href="data:application/manifest+json,{%22name%22:%22Bin%20Collection%20Tracker%22,%22short_name%22:%22Bins%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22%23ffffff%22,%22theme_color%22:%22%23228B22%22,%22icons%22:[{%22src%22:%22https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f5d1-fe0f.png%22,%22sizes%22:%22192x192%22,%22type%22:%22image/png%22},{%22src%22:%22https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f5d1-fe0f.png%22,%22sizes%22:%22512x512%22,%22type%22:%22image/png%22}]}" />
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+  <link rel="apple-touch-icon" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f5d1-fe0f.png"/>
+  <meta name="theme-color" content="#228B22"/>
+  <!-- Bulma CSS via CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.3.0/css/bulma.min.css">
+  <style>
+    html,body { background:#f8f9fa; }
+    .bin-color { display:inline-block; width:1.25em; height:1.25em; border-radius:50%; margin-right:0.25em; vertical-align:middle; border:1px solid #ccc; }
+    .box { margin-bottom:1em; }
+    .is-due-soon { border:2px solid red; }
+    .hidden { display:none !important; }
+    .location-current { font-weight:bold; color:#228B22; }
+    .bin-entry { display:flex; align-items:center;}
+    .bin-entry .bin-color { margin-right:0.5em;}
+    .progress { width:100%; }
+    .columns { margin-bottom:0; }
+  </style>
 </head>
 <body>
-    <h1>Welcome to the Bin Collection Tracker</h1>
+<section class="section">
+  <div class="container" id="app"></div>
+</section>
+
+<script>
+// ==== PWA: Inline service worker registration + code (caches self, and offline content) ====
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    const swCode = `
+      const CACHE_NAME = 'bin-pwa-v1';
+      const toCache = ['/', location.pathname];
+      self.addEventListener('install', e => {
+        e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(toCache)));
+      });
+      self.addEventListener('fetch', e => {
+        e.respondWith(
+          caches.match(e.request).then(resp => resp || fetch(e.request))
+        );
+      });
+    `;
+    // Inline registration using a Blob for self-contained file
+    if (!navigator.serviceWorker.controller) {
+      const blob = new Blob([swCode], {type: 'application/javascript'});
+      const swUrl = URL.createObjectURL(blob);
+      navigator.serviceWorker.register(swUrl);
+    }
+  });
+}
+
+// ==================== APP LOGIC ====================
+
+const app = document.getElementById('app');
+const GEO_API = 'https://api.opencagedata.com/geocode/v1/json?q={lat}+{lng}&key=YOUR_API_KEY'; // <-- Insert your geocoder API key here
+
+const BIN_COLORS = [
+  { name:'Red', color:'#e74c3c' },
+  { name:'Blue', color:'#3498db' },
+  { name:'Green', color:'#27ae60' },
+  { name:'Yellow', color:'#f1c40f' },
+  { name:'Black', color:'#222' },
+  { name:'Brown', color:'#965A38' }
+];
+
+// ===== Data Storage =====
+function saveLocations(locations) {
+  localStorage.setItem('bin-locations', JSON.stringify(locations));
+}
+function loadLocations() {
+  return JSON.parse(localStorage.getItem('bin-locations') || '[]');
+}
+function saveState(state) {
+  localStorage.setItem('bin-state', JSON.stringify(state));
+}
+function loadState() {
+  return JSON.parse(localStorage.getItem('bin-state') || '{}');
+}
+
+// ===== Utilities =====
+function deg2rad(d) { return d * (Math.PI/180); }
+function haversine(lat1, lon1, lat2, lon2) {
+  // returns distance in meters
+  const R = 6371000;
+  const dLat = deg2rad(lat2-lat1);
+  const dLon = deg2rad(lon2-lon1);
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(deg2rad(lat1))*Math.cos(deg2rad(lat2))*
+            Math.sin(dLon/2)*Math.sin(dLon/2);
+  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R*c;
+}
+
+function formatDate(d) {
+  return d.toISOString().split('T')[0];
+}
+
+function nextCollectionDay(pattern, startDate) {
+  // pattern = array of {dayOfWeek, weekOfFortnight} (0=Sun...6=Sat, 1 or 2)
+  // startDate = ISO date string for the start of the fortnight cycle
+  // Returns: {date, daysAway, binsDue}
+  const today = new Date();
+  let soonest = null;
+  let minDays = Infinity;
+  for (let i=0; i<28; i++) {
+    let d = new Date();
+    d.setDate(today.getDate() + i);
+    const dayOfWeek = d.getDay();
+    // Which week of the fortnight?
+    const day0 = new Date(startDate);
+    const daysSince = Math.floor((d - day0) / (1000*60*60*24));
+    const weekOfFortnight = Math.floor((daysSince/7)%2) + 1;
+    const due = pattern.filter(p=>p.dayOfWeek==dayOfWeek && p.weekOfFortnight==weekOfFortnight);
+    if (due.length && i < minDays) {
+      soonest = {date: new Date(d), daysAway: i, binsDue: due.map(x=>x.binIndex)};
+      minDays = i;
+    }
+  }
+  return soonest;
+}
+
+// ===== Geocoding =====
+async function reverseGeocode(lat, lng) {
+  // API key placeholder in GEO_API
+  const url = GEO_API.replace('{lat}',lat).replace('{lng}',lng);
+  const res = await fetch(url);
+  if (!res.ok) return '';
+  const data = await res.json();
+  return data.results[0]?.formatted || '';
+}
+
+// ===== Rendering =====
+function render() {
+  const locations = loadLocations();
+  const state = loadState();
+  let currentLoc = state.currentLoc;
+  let currentLocIdx = null;
+  if (currentLoc) {
+    // Find closest location (within 100m)
+    let idx = -1, mindist = 150;
+    locations.forEach((loc,i)=>{
+      if (loc.lat!=null && loc.lng!=null) {
+        const dist = haversine(currentLoc.lat, currentLoc.lng, loc.lat, loc.lng);
+        if (dist < mindist) { mindist=dist; idx=i; }
+      }
+    });
+    if (idx>=0) currentLocIdx = idx;
+  }
+
+  // Main UI
+  app.innerHTML = `
+    <nav class="level"><div class="level-left"><h1 class="title is-4">Bin Collection Tracker</h1></div>
+      <div class="level-right"><button class="button is-small" id="locateBtn">Use My Location</button></div>
+    </nav>
+    <div id="currentStatus"></div>
+    <div class="box">
+      <h2 class="subtitle is-5 mb-2">Saved Locations</h2>
+      <div id="locList">
+        ${locations.map((loc,i)=>`
+          <div class="box ${currentLocIdx===i?'location-current':''}" style="margin-bottom:0.5em">
+            <div class="is-pulled-right">
+              <button class="button is-small is-info" data-edit="${i}">Edit</button>
+              <button class="button is-small is-danger" data-del="${i}">Delete</button>
+            </div>
+            <div><b>${loc.name||'Unnamed'}</b></div>
+            <div class="is-size-7">${loc.address||''}</div>
+            <div class="is-size-7">Bins: ${loc.bins.map(binDesc).join(', ')}</div>
+          </div>
+        `).join('')}
+      </div>
+      <button class="button is-primary mt-2" id="addLocBtn">Add Location</button>
+    </div>
+    <div id="editSection" class="box hidden"></div>
+    <footer class="has-text-centered is-size-7 mt-4">PWA - Install to Home Screen for full experience</footer>
+  `;
+
+  // Current status
+  let statusDiv = document.getElementById('currentStatus');
+  if (currentLocIdx!=null) {
+    const loc = locations[currentLocIdx];
+    const next = nextCollectionDay(loc.pattern, loc.startDate);
+    if (next) {
+      statusDiv.innerHTML = `
+        <div class="notification is-success mb-3">
+          <b>You're at <span class="location-current">${loc.name||loc.address||'this location'}</span>.<br>
+          Next bin collection: <b>${formatDate(next.date)}</b> (${next.daysAway==0?'Today':next.daysAway+' days'})</b><br>
+          ${next.binsDue.map(idx=>{
+            const b = loc.bins[idx];
+            const pct = Math.min(100, Math.round((1 - next.daysAway/14)*100));
+            return `<div class="bin-entry">${binColorDot(b.color)} <b>${b.size}L ${b.color} bin</b> should be <progress class="progress is-small is-info" value="${pct}" max="100"></progress> ${pct}% full</div>`;
+          }).join('')}
+        </div>
+      `;
+    } else {
+      statusDiv.innerHTML = `<div class="notification is-warning">No collection pattern set for this location.</div>`;
+    }
+  } else {
+    statusDiv.innerHTML = `<div class="notification is-light">No nearby location found. Use "Use My Location" or add one below.</div>`;
+  }
+
+  // Event listeners
+  document.getElementById('locateBtn').onclick = locateCurrent;
+  document.getElementById('addLocBtn').onclick = ()=>editLocation();
+  document.querySelectorAll('[data-edit]').forEach(btn=>{
+    btn.onclick = ()=>editLocation(parseInt(btn.dataset.edit));
+  });
+  document.querySelectorAll('[data-del]').forEach(btn=>{
+    btn.onclick = ()=>{
+      if (confirm('Delete this location?')) {
+        locations.splice(parseInt(btn.dataset.del),1);
+        saveLocations(locations);
+        render();
+      }
+    };
+  });
+}
+
+// ----- Bin helpers -----
+function binColorDot(c) {
+  const color = BIN_COLORS.find(b=>b.name.toLowerCase()==c.toLowerCase())?.color||c;
+  return `<span class="bin-color" style="background:${color}"></span>`;
+}
+function binDesc(b) {
+  return `${binColorDot(b.color)} ${b.size}L ${b.color}`;
+}
+
+// ----- Add/Edit location -----
+function editLocation(idx) {
+  const locations = loadLocations();
+  let loc = idx!=null ? Object.assign({},locations[idx]) : {
+    name:'',address:'',lat:null,lng:null,
+    bins:[{size:240,color:'Red'}],
+    pattern:[],
+    startDate:formatDate(new Date())
+  };
+  // UI
+  let html = `
+  <form id="locEditForm">
+    <div class="field">
+      <label class="label">Name</label>
+      <input class="input" name="name" placeholder="e.g. Home" value="${loc.name||''}">
+    </div>
+    <div class="field">
+      <label class="label">Address</label>
+      <input class="input" name="address" placeholder="Address" value="${loc.address||''}">
+    </div>
+    <div class="field is-grouped">
+      <div class="control">
+        <label class="label">Latitude</label>
+        <input class="input" type="number" step="any" name="lat" value="${loc.lat??''}">
+      </div>
+      <div class="control">
+        <label class="label">Longitude</label>
+        <input class="input" type="number" step="any" name="lng" value="${loc.lng??''}">
+      </div>
+      <div class="control" style="align-self:end;">
+        <button class="button is-small" id="geoBtn" type="button">Locate Me</button>
+      </div>
+    </div>
+    <div class="field">
+      <label class="label">Bins</label>
+      <div id="binsList">
+        ${loc.bins.map((b,i)=>binEditRow(b,i,loc.bins.length)).join('')}
+      </div>
+      <button class="button is-small is-primary mt-1" id="addBinBtn" type="button">Add Bin</button>
+    </div>
+    <div class="field">
+      <label class="label">Fortnight Start Date</label>
+      <input class="input" type="date" name="startDate" value="${loc.startDate||formatDate(new Date())}">
+      <p class="help">Set to a recent bin collection date to align the cycle</p>
+    </div>
+    <div class="field">
+      <label class="label">Collection Pattern</label>
+      <div id="patternList">
+        ${patternEditRows(loc)}
+      </div>
+      <button class="button is-small is-primary mt-1" id="addPatternBtn" type="button">Add Pattern Row</button>
+      <p class="help">e.g. "Red bin, Monday, Week 1" means the red bin is collected on the first Monday of each fortnight.</p>
+    </div>
+    <div class="field is-grouped mt-2">
+      <button class="button is-success" type="submit">Save</button>
+      <button class="button" id="cancelBtn" type="button">Cancel</button>
+    </div>
+  </form>
+  `;
+  const editDiv = document.getElementById('editSection');
+  editDiv.innerHTML = html;
+  editDiv.classList.remove('hidden');
+  // Hide main list
+  document.getElementById('locList').parentNode.classList.add('hidden');
+
+  // Bin events
+  document.getElementById('addBinBtn').onclick = ()=>{
+    loc.bins.push({size:120,color:'Blue'});
+    editLocation(idx??null);
+  };
+
+  // Pattern events
+  document.getElementById('addPatternBtn').onclick = ()=>{
+    loc.pattern.push({binIndex:0,dayOfWeek:1,weekOfFortnight:1});
+    editLocation(idx??null);
+  };
+
+  // Bin row events
+  loc.bins.forEach((b,i)=>{
+    const delBtn = document.getElementById('binDelBtn'+i);
+    if (delBtn) delBtn.onclick = ()=>{
+      if (loc.bins.length>1) {
+        loc.bins.splice(i,1);
+        // Also remove any pattern referencing this bin
+        loc.pattern = loc.pattern.filter(p=>p.binIndex!==i);
+        loc.pattern.forEach(p=>{ if (p.binIndex>i) p.binIndex--; });
+        editLocation(idx??null);
+      }
+    };
+  });
+
+  // Pattern row events
+  loc.pattern.forEach((p,i)=>{
+    const delBtn = document.getElementById('patDelBtn'+i);
+    if (delBtn) delBtn.onclick = ()=>{
+      loc.pattern.splice(i,1);
+      editLocation(idx??null);
+    };
+  });
+
+  // Geolocate for this location
+  document.getElementById('geoBtn').onclick = ()=>{
+    navigator.geolocation.getCurrentPosition(pos=>{
+      loc.lat = pos.coords.latitude;
+      loc.lng = pos.coords.longitude;
+      // Try geocode
+      reverseGeocode(loc.lat,loc.lng).then(addr=>{
+        if (addr) loc.address = addr;
+        editLocation(idx??null);
+      });
+    },err=>alert('Geolocation failed: '+err.message));
+  };
+
+  // Cancel
+  document.getElementById('cancelBtn').onclick = ()=>{
+    editDiv.classList.add('hidden');
+    document.getElementById('locList').parentNode.classList.remove('hidden');
+    render();
+  };
+
+  // Save
+  document.getElementById('locEditForm').onsubmit = e=>{
+    e.preventDefault();
+    const f = e.target;
+    loc.name = f.name.value.trim();
+    loc.address = f.address.value.trim();
+    loc.lat = parseFloat(f.lat.value)||null;
+    loc.lng = parseFloat(f.lng.value)||null;
+    loc.startDate = f.startDate.value;
+    // Bins/pattern already updated in state
+    if (idx!=null) locations[idx]=loc;
+    else locations.push(loc);
+    saveLocations(locations);
+    editDiv.classList.add('hidden');
+    document.getElementById('locList').parentNode.classList.remove('hidden');
+    render();
+  };
+
+  // Bin and pattern selectors
+  loc.bins.forEach((b,i)=>{
+    const sel = document.getElementById('binColor'+i);
+    if (sel) sel.onchange = e=>{
+      b.color = e.target.value;
+    };
+    const sizeSel = document.getElementById('binSize'+i);
+    if (sizeSel) sizeSel.onchange = e=>{
+      b.size = parseInt(e.target.value);
+    };
+  });
+  loc.pattern.forEach((p,i)=>{
+    document.getElementById('patBin'+i).onchange = e=>{p.binIndex=parseInt(e.target.value)};
+    document.getElementById('patDay'+i).onchange = e=>{p.dayOfWeek=parseInt(e.target.value)};
+    document.getElementById('patWeek'+i).onchange = e=>{p.weekOfFortnight=parseInt(e.target.value)};
+  });
+}
+
+function binEditRow(b,i,len) {
+  return `<div class="field has-addons bin-entry">
+    <div class="control">
+      <input id="binSize${i}" class="input" type="number" min="60" max="360" value="${b.size}" style="width:5em;">
+    </div>
+    <div class="control">
+      <select id="binColor${i}" class="input">
+        ${BIN_COLORS.map(opt=>`<option value="${opt.name}"${b.color==opt.name?' selected':''}>${opt.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="control">
+      <button class="button is-danger is-small" id="binDelBtn${i}" type="button" ${len<=1?'disabled':''}>✕</button>
+    </div>
+  </div>`;
+}
+
+function patternEditRows(loc) {
+  if (!loc.pattern.length) return `<div class="is-size-7">No collection pattern set. Add one below.</div>`;
+  return loc.pattern.map((p,i)=>`
+    <div class="field is-grouped" style="align-items:center;">
+      <div class="control">
+        <select class="input" id="patBin${i}">
+          ${loc.bins.map((b,ix)=>`<option value="${ix}"${ix==p.binIndex?' selected':''}>${b.size}L ${b.color}</option>`).join('')}
+        </select>
+      </div>
+      <div class="control">
+        <select class="input" id="patDay${i}">
+          ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d,ix)=>
+            `<option value="${ix}"${ix==p.dayOfWeek?' selected':''}>${d}</option>`).join('')}
+        </select>
+      </div>
+      <div class="control">
+        <select class="input" id="patWeek${i}">
+          <option value="1"${p.weekOfFortnight==1?' selected':''}>Week 1</option>
+          <option value="2"${p.weekOfFortnight==2?' selected':''}>Week 2</option>
+        </select>
+      </div>
+      <div class="control">
+        <button class="button is-danger is-small" id="patDelBtn${i}" type="button">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ----- Geolocation -----
+function locateCurrent() {
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const {latitude,longitude} = pos.coords;
+    // Save as "current" in state
+    saveState({currentLoc:{lat:latitude,lng:longitude}});
+    // Try geocode to display address
+    reverseGeocode(latitude,longitude).then(addr=>{
+      // Optionally show address
+      render();
+    });
+  },err=>{
+    alert('Geolocation failed: '+err.message);
+  });
+}
+
+// ===== Initial render =====
+render();
+
+</script>
 </body>
 </html>
