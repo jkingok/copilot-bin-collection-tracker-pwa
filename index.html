@@ -58,7 +58,8 @@ if ('serviceWorker' in navigator) {
 // ==================== APP LOGIC ====================
 
 const app = document.getElementById('app');
-const GEO_API = 'https://api.opencagedata.com/geocode/v1/json?q={lat}+{lng}&key=YOUR_API_KEY'; // <-- Insert your geocoder API key here
+// Geocoding is NOT FREE
+// const GEO_API = 'https://api.opencagedata.com/geocode/v1/json?q={lat}+{lng}&key=YOUR_API_KEY'; // <-- Insert your geocoder API key here
 
 const BIN_COLORS = [
   { name:'Red', color:'#e74c3c' },
@@ -128,11 +129,14 @@ function nextCollectionDay(pattern, startDate) {
 // ===== Geocoding =====
 async function reverseGeocode(lat, lng) {
   // API key placeholder in GEO_API
-  const url = GEO_API.replace('{lat}',lat).replace('{lng}',lng);
-  const res = await fetch(url);
-  if (!res.ok) return '';
-  const data = await res.json();
-  return data.results[0]?.formatted || '';
+  //const url = GEO_API.replace('{lat}',lat).replace('{lng}',lng);
+  //const res = await fetch(url);
+  //if (!res.ok) return '';
+  //const data = await res.json();
+  //return data.results[0]?.formatted || '';
+
+  const res = prompt("Enter a name for this location:");
+  return (res !== null) ? res : '';
 }
 
 // ===== Rendering =====
