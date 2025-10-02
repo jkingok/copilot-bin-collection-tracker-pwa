@@ -339,12 +339,12 @@ function editLocation(idx) {
     navigator.geolocation.getCurrentPosition(pos=>{
       loc.lat = pos.coords.latitude;
       loc.lng = pos.coords.longitude;
-      // Try geocode
-      reverseGeocode(loc.lat,loc.lng).then(addr=>{
-        if (addr) loc.address = addr;
+      //// Try geocode
+      //reverseGeocode(loc.lat,loc.lng).then(addr=>{
+      //  if (addr) loc.address = addr;
         editLocation(idx??null);
-      });
-    },err=>alert('Geolocation failed: '+err.message));
+      //});
+    });//,err=>alert('Geolocation failed: '+err.message));
   };
 
   // Cancel
@@ -440,13 +440,13 @@ function locateCurrent() {
     const {latitude,longitude} = pos.coords;
     // Save as "current" in state
     saveState({currentLoc:{lat:latitude,lng:longitude}});
-    // Try geocode to display address
-    reverseGeocode(latitude,longitude).then(addr=>{
+    //// Try geocode to display address
+    //reverseGeocode(latitude,longitude).then(addr=>{
       // Optionally show address
       render();
-    });
-  },err=>{
-    alert('Geolocation failed: '+err.message);
+    //});
+  //},err=>{
+  //  alert('Geolocation failed: '+err.message);
   });
 }
 
