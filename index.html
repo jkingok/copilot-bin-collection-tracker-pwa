@@ -123,7 +123,7 @@ function saveLocations(locations) {
   localStorage.setItem('bin-locations', JSON.stringify(locations));
 }
 function loadLocations() {
-  return (typeof locations !== "undefined" && locations != null) ? locations : JSON.parse(localStorage.getItem('bin-locations') || '[]');
+  return JSON.parse(localStorage.getItem('bin-locations') || '[]');
 }
 function saveState(state) {
   localStorage.setItem('bin-state', JSON.stringify(state));
@@ -293,11 +293,11 @@ function editLocation(idx) {
     <div class="field is-grouped">
       <div class="control">
         <label class="label">Latitude</label>
-        <input class="input" type="number" step="any" name="lat" value="${loc.lat??''}">
+        <input class="input" type="number" step="any" id="latNum" name="lat" value="${loc.lat??''}">
       </div>
       <div class="control">
         <label class="label">Longitude</label>
-        <input class="input" type="number" step="any" name="lng" value="${loc.lng??''}">
+        <input class="input" type="number" step="any" id="lngNum" name="lng" value="${loc.lng??''}">
       </div>
       <div class="control" style="align-self:end;">
         <button class="button is-small" id="geoBtn" type="button">Locate Me</button>
@@ -376,7 +376,8 @@ function editLocation(idx) {
       console.log(pos.coords);
       loc.lat = pos.coords.latitude;
       loc.lng = pos.coords.longitude;
-      editLocation(idx??null);
+      document.getElementById('latNum').value = loc.lat;
+      document.getElementById('lngNum').value = loc.lng;
     },err=>alert('Geolocation failed: '+err.message));
   };
 
